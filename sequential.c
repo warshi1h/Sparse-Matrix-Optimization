@@ -96,8 +96,8 @@ void free_matrix(CSRMatrix *matrix)
 
 int main()
 {
-    int rows = 8000;
-    int cols = 8000;
+    int rows = 4000;
+    int cols = 4000;
 
     /* 90% of the matrix elements are zeros */
     double sparsity = 0.90;
