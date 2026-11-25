@@ -3,19 +3,7 @@
 #include <math.h>
 #include <string.h>
 #include <cuda_runtime.h>
-
-
-typedef struct
-{
-    int rows;
-    int cols;
-
-    double *values;
-    int *column_index;
-    int *row_ptr;
-
-    int nonzeros;
-} CSRMatrix;
+#include "matrix_generator/matrix.h"
 
 
 typedef struct
@@ -32,113 +20,11 @@ typedef struct
 
 
 /* ============================================================
-   CSR MATRIX GENERATION
-   ============================================================ */
-
-CSRMatrix generate_sparse_matrix(
-    int rows,
-    int cols,
-    double sparsity,
-    int irregular)
-{
-    CSRMatrix matrix;
-
-    matrix.rows = rows;
-    matrix.cols = cols;
-    matrix.nonzeros = 0;
-
-    matrix.values =
-        (double *)malloc(
-            rows * cols * sizeof(double));
-
-    matrix.column_index =
-        (int *)malloc(
-            rows * cols * sizeof(int));
-
-    matrix.row_ptr =
-        (int *)malloc(
-            (rows + 1) * sizeof(int));
-
-    if (matrix.values == NULL ||
-        matrix.column_index == NULL ||
-        matrix.row_ptr == NULL)
-    {
-        printf("Memory allocation failed!\n");
-        exit(1);
-    }
-
-    srand(42);
-
-    matrix.row_ptr[0] = 0;
-
-    for (int i = 0; i < rows; i++)
-    {
-        double row_probability =
-            (double)rand() / RAND_MAX;
-
-        int target_nnz;
-
-        if (irregular)
-        {
-            if (row_probability < 0.25)
-                target_nnz = 20 + rand() % 81;
-            else if (row_probability < 0.50)
-                target_nnz = 150 + rand() % 151;
-            else if (row_probability < 0.75)
-                target_nnz = 400 + rand() % 201;
-            else
-                target_nnz = 800 + rand() % 401;
-
-            /*
-             * Generate exactly target_nnz entries.
-             * Columns are chosen randomly.
-             */
-            for (int k = 0; k < target_nnz; k++)
-            {
-                matrix.values[matrix.nonzeros] =
-                    1.0 +
-                    ((double)rand() / RAND_MAX) * 9.0;
-
-                matrix.column_index[matrix.nonzeros] =
-                    rand() % cols;
-
-                matrix.nonzeros++;
-            }
-        }
-        else
-        {
-            for (int j = 0; j < cols; j++)
-            {
-                double probability =
-                    (double)rand() / RAND_MAX;
-
-                if (probability > sparsity)
-                {
-                    matrix.values[matrix.nonzeros] =
-                        1.0 +
-                        ((double)rand() / RAND_MAX) * 9.0;
-
-                    matrix.column_index[matrix.nonzeros] = j;
-
-                    matrix.nonzeros++;
-                }
-            }
-        }
-
-        matrix.row_ptr[i + 1] =
-            matrix.nonzeros;
-    }
-
-    return matrix;
-}
-
-
-/* ============================================================
    MATRIX ANALYSIS
    ============================================================ */
 
 double analyze_matrix(
-    CSRMatrix *matrix,
+    SpmvDataset *matrix,
     int *min_nnz,
     int *max_nnz,
     double *average_nnz,
@@ -277,7 +163,7 @@ __global__ void spmv_ell_kernel(
    ============================================================ */
 
 ELLMatrix build_ell(
-    CSRMatrix *matrix,
+    SpmvDataset *matrix,
     int threshold)
 {
     ELLMatrix ell;
@@ -352,7 +238,7 @@ ELLMatrix build_ell(
                 ell.column_index[
                     k * ell.long_rows +
                     long_row_index] =
-                    matrix->column_index[start + k];
+                    matrix->col_idx[start + k];
             }
 
             long_row_index++;
@@ -387,14 +273,6 @@ void check_cuda(
    FREE MATRICES
    ============================================================ */
 
-void free_csr(CSRMatrix *matrix)
-{
-    free(matrix->values);
-    free(matrix->column_index);
-    free(matrix->row_ptr);
-}
-
-
 void free_ell(ELLMatrix *ell)
 {
     free(ell->values);
@@ -409,10 +287,7 @@ void free_ell(ELLMatrix *ell)
 
 int main(int argc, char **argv)
 {
-    int rows = 4000;
-    int cols = 4000;
 
-    double sparsity = 0.90;
 
     int irregular = 0;
 
@@ -427,17 +302,22 @@ int main(int argc, char **argv)
     printf("Runtime Adaptive CUDA SpMV\n");
     printf("========================================\n");
 
-    printf("Generating %s sparse matrix...\n",
-           irregular ? "irregular" : "uniform");
+    const char *filename = irregular
+        ? "matrix_generator/data/irregular_matrix.bin"
+        : "matrix_generator/data/uniform_matrix.bin";
 
+    printf("Loading shared dataset: %s\\n", filename);
 
-    CSRMatrix matrix =
-        generate_sparse_matrix(
-            rows,
-            cols,
-            sparsity,
-            irregular);
+    SpmvDataset matrix = {0};
 
+    if (!load_matrix(filename, &matrix))
+    {
+        printf("Failed to load matrix dataset!\\n");
+        return 1;
+    }
+
+    int rows = matrix.rows;
+    int cols = matrix.cols;
 
     int min_nnz;
     int max_nnz;
@@ -459,7 +339,7 @@ int main(int argc, char **argv)
            cols);
 
     printf("Non-zero elements: %d\n",
-           matrix.nonzeros);
+           matrix.nnz);
 
     printf("Minimum NNZ/row: %d\n",
            min_nnz);
@@ -543,20 +423,21 @@ int main(int argc, char **argv)
 
 
     /*
-     * Input vector.
+     * Shared input vector and output vector.
      */
 
-    double *x =
-        (double *)malloc(
-            cols * sizeof(double));
+    double *x = matrix.x;
 
     double *y =
         (double *)malloc(
             rows * sizeof(double));
 
-
-    for (int i = 0; i < cols; i++)
-        x[i] = 1.0;
+    if (y == NULL)
+    {
+        printf("Output vector allocation failed!\\n");
+        free_dataset(&matrix);
+        return 1;
+    }
 
 
     /*
@@ -573,14 +454,14 @@ int main(int argc, char **argv)
     check_cuda(
         cudaMalloc(
             &d_values,
-            matrix.nonzeros *
+            matrix.nnz *
             sizeof(double)),
         "cudaMalloc d_values");
 
     check_cuda(
         cudaMalloc(
             &d_column_index,
-            matrix.nonzeros *
+            matrix.nnz *
             sizeof(int)),
         "cudaMalloc d_column_index");
 
@@ -614,7 +495,7 @@ int main(int argc, char **argv)
         cudaMemcpy(
             d_values,
             matrix.values,
-            matrix.nonzeros *
+            matrix.nnz *
             sizeof(double),
             cudaMemcpyHostToDevice),
         "copy values");
@@ -622,8 +503,8 @@ int main(int argc, char **argv)
     check_cuda(
         cudaMemcpy(
             d_column_index,
-            matrix.column_index,
-            matrix.nonzeros *
+            matrix.col_idx,
+            matrix.nnz *
             sizeof(int),
             cudaMemcpyHostToDevice),
         "copy column indices");
@@ -890,6 +771,23 @@ int main(int argc, char **argv)
         "Result check: y[0] = %.4f\n",
         y[0]);
 
+    FILE *output = fopen("cuda_output.txt", "w");
+    
+    if (output == NULL)
+    {
+        printf("Failed to create CUDA output file!\n");
+        return 1;
+    }
+    
+    for (int i = 0; i < rows; i++)
+    {
+        fprintf(output, "%.10f\n", y[i]);
+    }
+    
+    fclose(output);
+    
+    printf("Full CUDA output saved to cuda_output.txt\n");
+
     printf(
         "Runtime adaptive CUDA SpMV completed successfully.\n");
 
@@ -911,10 +809,9 @@ int main(int argc, char **argv)
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
 
-    free(x);
     free(y);
 
-    free_csr(&matrix);
+    free_dataset(&matrix);
 
     if (use_hybrid)
         free_ell(&ell);

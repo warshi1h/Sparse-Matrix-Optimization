@@ -42,6 +42,15 @@ typedef struct
 
 
 /*
+ * C/C++ compatibility.
+ */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+/*
  * Generate a uniform sparse matrix.
  */
 
@@ -92,5 +101,10 @@ void free_dataset(SpmvDataset *dataset);
 void print_matrix_info(
     const SpmvDataset *dataset
 );
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

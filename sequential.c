@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 
 #include "matrix_generator/matrix.h"
 
@@ -31,7 +32,7 @@ void spmv(
 }
 
 
-int main()
+int main(int argc, char **argv)
 {
     SpmvDataset matrix = {0};
 
@@ -41,9 +42,12 @@ int main()
 
     printf("Loading shared matrix dataset...\n");
 
-    if (!load_matrix(
-            "matrix_generator/data/uniform_matrix.bin",
-            &matrix))
+    const char *filename =
+                (argc > 1 && strcmp(argv[1], "--irregular") == 0)
+                ? "matrix_generator/data/irregular_matrix.bin"
+                : "matrix_generator/data/uniform_matrix.bin";
+            
+            if (!load_matrix(filename, &matrix))
     {
         printf("Failed to load matrix dataset!\n");
         return 1;
@@ -154,6 +158,25 @@ int main()
     printf("Execution time: %.6f seconds\n", execution_time);
 
     printf("Result check: y[0] = %.4f\n", y[0]);
+
+    FILE *output = fopen("cpu_output.txt", "w");
+    
+    if (output == NULL)
+    {
+        printf("Failed to create CPU output file!\n");
+        free(y);
+        free_dataset(&matrix);
+        return 1;
+    }
+    
+    for (int i = 0; i < rows; i++)
+    {
+        fprintf(output, "%.10f\n", y[i]);
+    }
+    
+    fclose(output);
+    
+    printf("Full CPU output saved to cpu_output.txt\n");
 
 
     /*
