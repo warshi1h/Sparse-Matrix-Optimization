@@ -6,3 +6,7 @@ cuda_test
 cuda-keyring_1.1-1_all.deb
 
 matrix_analysis
+
+# Matrix generator build artifacts
+*.o
+matrix_generator/test_generator
