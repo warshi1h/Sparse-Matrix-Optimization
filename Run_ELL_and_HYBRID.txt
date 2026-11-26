@@ -6,21 +6,20 @@ select a GPU runtime and put %%bash on the first line of the command cell.
 
 Build both programs
 
-mkdir -p build/ell-cuda
-gcc -O3 -c matrix_generator/matrix_io.c -o build/ell-cuda/matrix_io.o
-gcc -O3 -c matrix_generator/matrix_generator.c -o build/ell-cuda/matrix_generator.o
-nvcc -O3 -std=c++17 -arch=native cuda_spmv_ell_optimized.cu build/ell-cuda/matrix_io.o build/ell-cuda/matrix_generator.o -o build/ell-cuda/ell_spmv
-nvcc -O3 -std=c++17 -arch=native cuda_spmv_hybrid_optimized.cu build/ell-cuda/matrix_io.o build/ell-cuda/matrix_generator.o -o build/ell-cuda/hybrid_spmv
+gcc -O3 -c matrix_generator/matrix_io.c -o matrix_io.o
+gcc -O3 -c matrix_generator/matrix_generator.c -o matrix_generator.o
+nvcc -O3 -std=c++17 -arch=native cuda_spmv_ell_optimized.cu matrix_io.o matrix_generator.o -o ell_spmv
+nvcc -O3 -std=c++17 -arch=native cuda_spmv_hybrid_optimized.cu matrix_io.o matrix_generator.o -o hybrid_spmv
 
 Run ELL
 
-./build/ell-cuda/ell_spmv
-./build/ell-cuda/ell_spmv --irregular
+./ell_spmv
+./ell_spmv --irregular
 
 Run HYBRID
 
-./build/ell-cuda/hybrid_spmv --concurrent
-./build/ell-cuda/hybrid_spmv --irregular --concurrent
+./hybrid_spmv --concurrent
+./hybrid_spmv --irregular --concurrent
 
 Without --irregular, both programs use matrix_generator/data/uniform_matrix.bin.
 With --irregular, they use matrix_generator/data/irregular_matrix.bin.
