@@ -1,0 +1,47 @@
+BUILD AND RUN OPTIMIZED ELL AND HYBRID
+
+Run these commands in Bash from the repository root. You need an NVIDIA GPU,
+the CUDA Toolkit with nvcc, and a compatible GCC/G++ toolchain. In Colab,
+select a GPU runtime and put %%bash on the first line of the command cell.
+
+Build both programs
+
+gcc -O3 -c matrix_generator/matrix_io.c -o matrix_io.o
+gcc -O3 -c matrix_generator/matrix_generator.c -o matrix_generator.o
+nvcc -O3 -std=c++17 -arch=native cuda_spmv_ell_optimized.cu matrix_io.o matrix_generator.o -o ell_spmv
+nvcc -O3 -std=c++17 -arch=native cuda_spmv_hybrid_optimized.cu matrix_io.o matrix_generator.o -o hybrid_spmv
+
+Run ELL
+
+./ell_spmv
+./ell_spmv --irregular
+
+Run HYBRID
+
+./hybrid_spmv --concurrent
+./hybrid_spmv --irregular --concurrent
+
+Without --irregular, both programs use matrix_generator/data/uniform_matrix.bin.
+With --irregular, they use matrix_generator/data/irregular_matrix.bin.
+Both datasets come with the repo.
+
+ELL converts all rows from CSR to ELL on the GPU before multiplication.
+The HYBRID program uses CSR for CV below 10%, and enables the CSR + ELL row
+split for CV of 10% or more. On the bundled inputs, uniform selects CSR and
+irregular selects HYBRID. --concurrent uses two streams when both kernels
+are active. Omit it to use one stream.
+
+For HYBRID, rows with more nonzeros than the threshold use ELL. The threshold
+defaults to the rounded-up mean. Use --threshold N to set it manually.
+Use --force-hybrid to test the row split regardless of CV.
+
+Read the optimized timings for 128, 256, and 512 threads per block and check
+that the final line says Overall correctness: PASS. The reported SpMV times
+exclude format conversion and data transfers.
+
+Each program writes its output vector in the repository root. ELL writes
+cuda_ell_optimized_output.txt and HYBRID writes cuda_hybrid_optimized_output.txt.
+Save or rename an output before running the same program on another dataset.
+
+NVIDIA nvcc options
+https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#gpu-architecture-arch
