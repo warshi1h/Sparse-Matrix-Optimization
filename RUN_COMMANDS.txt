@@ -1,0 +1,51 @@
+HPC PROJECT - BUILD AND RUN COMMANDS (WSL / Linux)
+=================================================
+
+Run these commands from the HPC_Project folder, which contains:
+  cuda_spmv_optimized.cu
+  sequential_omp_schedules.c
+  matrix_generator/
+
+1) OPTIONAL: Generate or regenerate the shared matrix datasets
+--------------------------------------------------------------
+The binary datasets are already in matrix_generator/data. To regenerate them:
+
+gcc -O2 matrix_generator/test_generator.c matrix_generator/matrix_generator.c matrix_generator/matrix_io.c -lm -o matrix_generator/test_generator
+cd matrix_generator
+./test_generator
+cd ..
+
+2) Build and run the OpenMP schedule comparison
+------------------------------------------------
+gcc -O2 -fopenmp sequential_omp_schedules.c matrix_generator/matrix_io.c matrix_generator/matrix_generator.c -lm -o sequential_omp_schedules
+
+# Uniform matrix, using 4 CPU threads
+OMP_NUM_THREADS=4 ./sequential_omp_schedules
+
+# Irregular matrix, using 4 CPU threads
+OMP_NUM_THREADS=4 ./sequential_omp_schedules --irregular
+
+To try a different CPU thread count, change the 4 in OMP_NUM_THREADS=4.
+
+3) Build and run the CUDA kernel comparison
+-------------------------------------------
+# Optional: confirm that CUDA tools and an NVIDIA GPU are available
+nvcc --version
+nvidia-smi
+
+gcc -O2 -c matrix_generator/matrix_generator.c -o matrix_generator.o
+gcc -O2 -c matrix_generator/matrix_io.c -o matrix_io.o
+nvcc -O3 cuda_spmv_optimized.cu matrix_io.o matrix_generator.o -lm -o cuda_spmv_optimized
+
+# Uniform matrix
+./cuda_spmv_optimized
+
+# Irregular matrix
+./cuda_spmv_optimized --irregular
+
+Notes
+-----
+- Run the programs from the HPC_Project folder because dataset paths are relative.
+- OpenMP runs on CPU. CUDA runs require an NVIDIA GPU and a working CUDA Toolkit.
+- CUDA timing printed by the program is kernel-only time; input/output transfers are excluded.
+- The CUDA program writes cuda_optimized_output.txt for the fastest tested configuration.
